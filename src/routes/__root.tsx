@@ -34,8 +34,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body className="min-h-dvh dotted-grid-bg text-slate-900 antialiased">
-        <main className="mx-auto min-h-dvh w-full max-w-3xl rounded-2xl bg-content-background px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
+      <body className="min-h-dvh dotted-grid-bg py-2 font-mono text-slate-900 antialiased">
+        <main className="mx-auto flex min-h-[calc(100dvh-1rem)] w-full max-w-3xl flex-col rounded-2xl bg-content-background px-4 py-6 text-slate-100 sm:px-6 sm:py-8">
           {children}
         </main>
         <TanStackDevtools

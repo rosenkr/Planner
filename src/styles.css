@@ -1,5 +1,13 @@
 
 @import "tailwindcss";
+@import "@fontsource/poppins/400.css";
+@import "@fontsource/poppins/700.css";
+
+@layer base {
+  h1 {
+    font-family: "Poppins", sans-serif;
+  }
+}
 
 @theme {
   --color-page-background: #091510;
@@ -23,9 +31,12 @@ body {
 
 .dotted-grid-bg {
   background-color: var(--color-page-background);
-  background-image: radial-gradient(
-          #a8d8c433 1px,
-          transparent 1px
-  );
-  background-size: 24px 24px;
+  /* The repeating layer exposes the gradient only through the dots. */
+  background-image:
+    radial-gradient(circle, transparent 1px, var(--color-page-background) 1px),
+    radial-gradient(ellipse farthest-corner, #a8d8c480, #a8d8c433 70%, transparent);
+  background-size: 24px 24px, 100% 100%;
+  /* Center the gap between two dot columns on the panel. */
+  background-position: calc(50% - 12px) top, center;
+  background-repeat: repeat, no-repeat;
 }
