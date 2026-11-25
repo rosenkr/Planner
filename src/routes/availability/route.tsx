@@ -8,8 +8,6 @@ export const Route = createFileRoute('/availability')({
   component: AvailabilityPage,
 })
 
-const meetingDates = ['2026-12-01', '2026-12-02', '2026-12-03']
-
 function AvailabilityPage() {
-  return <AvailabilityEditor meetingName={meetingName} dates={meetingDates} timeZone="Europe/Stockholm" />
+  return <AvailabilityEditor meetingName={meetingName} firstDate="2026-12-01" lastDate="2026-12-03" timeZone="Europe/Stockholm" />
 }

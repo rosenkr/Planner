@@ -1,0 +1,39 @@
+.meeting-page { width: 100%; max-width: 36rem; margin-inline: auto; }
+.meeting-page h1 { font-size: clamp(1.75rem, 4vw, 2.4rem); font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+.meeting-page p { margin-top: .75rem; }
+.meeting-form { margin-block: 1.5rem; }
+.meeting-form fieldset { min-width: 0; display: grid; gap: 1.25rem; }
+.meeting-form label { display: grid; gap: .4rem; font-size: .875rem; }
+.meeting-form input:where(:not([type="checkbox"])) {
+  width: 100%; min-width: 0; min-height: 2.75rem; padding: .5rem .7rem; border: 1px solid #496553;
+  border-radius: .45rem; background: var(--color-page-background); color-scheme: dark;
+}
+.meeting-pair { display: grid; gap: 1rem; }
+.meeting-participants { display: grid; gap: .65rem; }
+.meeting-form .meeting-checkbox { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+.meeting-checkbox input { width: 1rem; height: 1rem; accent-color: #a8e6c5; }
+.meeting-date { position: relative; }
+.meeting-page .meeting-error, .meeting-response .meeting-error { margin-top: .35rem; color: #ffc6b9; font-size: .85rem; }
+.meeting-page .response-window { margin-top: .35rem; font-size: .85rem; }
+.response-window[data-color="green"] { color: #a8e6c5; }
+.response-window[data-color="yellow"] { color: #f2d478; }
+.response-window[data-color="orange"] { color: #ffab75; }
+.meeting-response { margin-top: 1rem; }
+.meeting-response p, .meeting-results li { margin-top: .4rem; }
+.meeting-results h2, .meeting-results h3 { margin-top: 1.25rem; font-weight: 700; }
+.meeting-results h2 { font-size: 1.3rem; }
+.meeting-date input[type="text"] { padding-right: 2.75rem; }
+.meeting-date-picker { position: absolute; right: 0; bottom: 0; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; }
+.meeting-date-picker:focus-within { outline: 2px solid currentColor; outline-offset: -4px; border-radius: .45rem; }
+.meeting-date-picker input { position: absolute; inset: 0; height: 100%; opacity: 0; cursor: pointer; padding: 0; }
+.meeting-date-picker input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+@media (min-width: 36rem) { .meeting-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.meeting-page .meeting-note { margin: -.65rem 0 0; color: #aac5b8; font-size: .85rem; }
+.meeting-action { margin-top: 1.25rem; min-height: 2.75rem; padding: .55rem 1.1rem; border-radius: .5rem; background: #a8e6c5; color: #091510; font-weight: 700; cursor: pointer; }
+.meeting-action:disabled { background: #30463b; color: #adbbaf; cursor: default; }
+.meeting-share { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1rem; }
+.meeting-share a { color: #a8e6c5; text-decoration: underline; overflow-wrap: anywhere; }
+.meeting-share button { padding: .4rem .7rem; border: 1px solid #496553; border-radius: .4rem; cursor: pointer; }
+.meeting-share span { font-size: .85rem; }
+.meeting-link-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: .75rem; margin-top: 1.25rem; }
+.meeting-link-row > .meeting-action, .meeting-link-row > .meeting-share { margin-top: 0; }
