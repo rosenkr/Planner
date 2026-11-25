@@ -59,6 +59,7 @@ export function meetingFieldErrors(input: MeetingInput, now = Date.now()): Meeti
   if (!errors.minMinutes && !errors.maxMinutes && input.minMinutes > input.maxMinutes)
     errors.maxMinutes = 'Maximum duration must be at least the minimum duration.'
   if (!Number.isSafeInteger(input.capacity) || input.capacity < 2) errors.capacity = 'Choose at least two participants.'
+  else if (input.capacity > 2_147_483_647) errors.capacity = 'Choose at most 2,147,483,647 participants.'
 
   let currentYear = new Date(now).getFullYear()
   if (typeof input.timeZone !== 'string' || !input.timeZone || /^[+-]/.test(input.timeZone)) {

@@ -1,50 +1,82 @@
 import assert from 'node:assert/strict'
-import test from 'node:test'
+import test, { before, after } from 'node:test'
+import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { database } from '../../../db/client.server.ts'
+import { toPublicEntry } from './entry.server.ts'
 import { incompleteDateError, meetingDateError, meetingFieldErrors, type MeetingInput } from './meeting.ts'
 import { createMeeting, getEntry, joinMeeting, MeetingValidationError, writeSchedule } from './store.server.ts'
 import { deadlineLimits, deadlineInstant, responseWindow } from './deadline.ts'
 import { recommend } from './recommendations.ts'
 
+if (!process.env.DATABASE_URL && existsSync('.env')) process.loadEnvFile('.env')
+const testUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL
+const dbTest = testUrl ? test : test.skip
+const testMeetingName = 'Planner test ' + randomUUID()
+const originalUrl = process.env.DATABASE_URL
+
+before(() => {
+  if (testUrl) process.env.DATABASE_URL = testUrl
+})
+
+after(async () => {
+  if (!testUrl) return
+  const sql = database()
+  try {
+    await sql`DELETE FROM meetings WHERE name = ${testMeetingName}`
+  } finally {
+    await sql.end()
+    if (originalUrl) process.env.DATABASE_URL = originalUrl
+    else delete process.env.DATABASE_URL
+  }
+})
+
 const input: MeetingInput = {
-  name: 'Planning', firstDate: '2026-03-29', lastDate: '2026-03-29',
+  name: testMeetingName, firstDate: '2026-03-29', lastDate: '2026-03-29',
   timeZone: 'Europe/Stockholm', minMinutes: 15, maxMinutes: 60, capacity: 2,
 }
 const now = Date.parse('2026-03-01T12:00Z')
 
-test('deadline and inclusive expiry use local midnight on both sides of a daylight-saving change', () => {
-  const code = createMeeting(input, 'creator', now)
-  const entry = getEntry(code, 'creator', now)
+dbTest('deadline and inclusive expiry use local midnight on both sides of a daylight-saving change', async () => {
+  const code = await createMeeting(input, 'creator', now)
+  const entry = await getEntry(code, 'creator', now)
   assert.equal(entry.state, 'join')
   if (!('meeting' in entry)) assert.fail('Expected meeting details')
   const deadline = Date.parse('2026-03-28T17:00Z')
   const expires = Date.parse('2026-03-29T22:00Z')
   assert.equal(entry.meeting.deadline, deadline)
   assert.equal(entry.meeting.expires, expires)
-  assert.throws(() => createMeeting(input, 'creator', deadline), error =>
+  await assert.rejects(() => createMeeting(input, 'creator', deadline), error =>
     error instanceof MeetingValidationError && !!error.fields.responseDeadline)
-  assert.equal(joinMeeting(code, 'visitor', 'B', deadline).state, 'closed')
-  assert.equal(getEntry(code, 'creator', expires).state, 'expired')
+  assert.equal((await joinMeeting(code, 'visitor', 'B', deadline)).state, 'closed')
+  assert.equal((await getEntry(code, 'creator', expires)).state, 'expired')
 })
 
-test('creating a link leaves all spots available to invitees by default', () => {
-  const code = createMeeting(input, 'creator', now)
-  assert.equal(getEntry(code, 'creator', now).state, 'join')
-  assert.equal(joinMeeting(code, 'guest1', 'Alex', now).state, 'member')
-  assert.equal(joinMeeting(code, 'guest2', 'Sam', now).state, 'member')
-  assert.equal(getEntry(code, 'creator', now).state, 'full')
+dbTest('creating a link leaves all spots available to invitees by default', async () => {
+  const code = await createMeeting(input, 'creator', now)
+  assert.equal((await getEntry(code, 'creator', now)).state, 'join')
+  assert.equal((await joinMeeting(code, 'guest1', 'Alex', now)).state, 'member')
+  assert.equal((await joinMeeting(code, 'guest2', 'Sam', now)).state, 'member')
+  assert.equal((await getEntry(code, 'creator', now)).state, 'full')
 })
 
-test('a creator who opts in takes one spot and can revisit as a member', () => {
-  const code = createMeeting({ ...input, creatorParticipantName: 'Alex' }, 'creator', now)
+dbTest('a creator who opts in takes one spot and can revisit as a member', async () => {
+  const code = await createMeeting({ ...input, creatorParticipantName: 'Alex' }, 'creator', now)
   assert.match(code, /^[A-Za-z0-9_-]{8}$/)
-  assert.equal(getEntry(code, 'creator', now).state, 'member')
-  assert.equal(joinMeeting(code, 'creator', 'Alex', now).state, 'member')
-  assert.equal(getEntry(code, 'guest', now).state, 'join')
-  assert.equal(joinMeeting(code, 'guest', 'Alex', now).state, 'member')
-  assert.equal(joinMeeting(code, 'guest', 'Alex', now).state, 'member')
-  assert.equal(joinMeeting(code, 'stranger', 'Alex', now).state, 'full')
-  assert.equal(getEntry(code, 'creator', now).state, 'member')
-  assert.equal(getEntry(code, undefined, now).state, 'full')
+  assert.equal((await getEntry(code, 'creator', now)).state, 'member')
+  assert.equal((await joinMeeting(code, 'creator', 'Alex', now)).state, 'member')
+  assert.equal((await getEntry(code, 'guest', now)).state, 'join')
+  assert.equal((await joinMeeting(code, 'guest', 'Alex', now)).state, 'member')
+  assert.equal((await joinMeeting(code, 'guest', 'Alex', now)).state, 'member')
+  assert.equal((await joinMeeting(code, 'stranger', 'Alex', now)).state, 'full')
+  assert.equal((await getEntry(code, 'creator', now)).state, 'member')
+  assert.equal((await getEntry(code, undefined, now)).state, 'full')
+})
+
+dbTest('two concurrent registrations cannot claim the same last spot', async () => {
+  const code = await createMeeting({ ...input, creatorParticipantName: 'Alex' }, 'owner', now)
+  const entries = await Promise.all(['one', 'two'].map(token => joinMeeting(code, token, token, now)))
+  assert.deepEqual(entries.map(entry => entry.state).sort(), ['full', 'member'])
 })
 
 test('assigns validation errors to the fields that need correcting', () => {
@@ -78,20 +110,20 @@ test('date feedback identifies the first invalid year, month or day during entry
   }
 })
 
-test('creation validates both date fields against the year in the meeting time zone', () => {
+dbTest('creation validates both date fields against the year in the meeting time zone', async () => {
   const newYearInStockholm = Date.parse('2025-12-31T23:30Z')
   for (const field of ['firstDate', 'lastDate']) {
-    assert.throws(() => createMeeting({ ...input, [field]: '2025-12-31' }, 'creator', newYearInStockholm), /2026 or a later year/)
-    assert.throws(() => createMeeting({ ...input, [field]: '2100-02-29' }, 'creator', now), /day from 01 to 28/)
+    await assert.rejects(() => createMeeting({ ...input, [field]: '2025-12-31' }, 'creator', newYearInStockholm), /2026 or a later year/)
+    await assert.rejects(() => createMeeting({ ...input, [field]: '2100-02-29' }, 'creator', now), /day from 01 to 28/)
   }
 })
 
-test('deadline can extend past 18:00 through 22:00 in the meeting zone, only while still in the future', () => {
+dbTest('deadline can extend past 18:00 through 22:00 in the meeting zone, only while still in the future', async () => {
   const localEvening = Date.parse('2026-03-28T17:30Z')
   const options = { ...input, responseDeadline: '2026-03-28T22:00' }
-  const code = createMeeting(options, 'owner', localEvening)
-  assert.equal(getEntry(code, undefined, Date.parse('2026-03-28T20:59:59Z')).state, 'join')
-  assert.equal(getEntry(code, undefined, Date.parse('2026-03-28T21:00Z')).state, 'closed')
+  const code = await createMeeting(options, 'owner', localEvening)
+  assert.equal((await getEntry(code, undefined, Date.parse('2026-03-28T20:59:59Z'))).state, 'join')
+  assert.equal((await getEntry(code, undefined, Date.parse('2026-03-28T21:00Z'))).state, 'closed')
   assert.ok(meetingFieldErrors({ ...options, responseDeadline: '2026-03-28T22:01' }, localEvening).responseDeadline)
   assert.ok(meetingFieldErrors({ ...options, responseDeadline: '2026-03-28T18:30' }, localEvening).responseDeadline)
   assert.ok(meetingFieldErrors(options, Date.parse('2026-03-28T21:00Z')).firstDate)
@@ -110,36 +142,38 @@ test('deadline can extend past 18:00 through 22:00 in the meeting zone, only whi
 const windows = { '2026-03-29': [{ start: 540, end: 600 }] }
 const later = { '2026-03-29': [{ start: 900, end: 960 }] }
 
-test('drafts resume privately and only explicit submissions can close the meeting early', () => {
-  const code = createMeeting(input, 'owner', now)
-  assert.equal(writeSchedule(code, 'stranger', windows, 0, true, now).state, 'join')
-  for (const token of ['one', 'two']) joinMeeting(code, token, token, now)
-  writeSchedule(code, 'one', windows, 0, false, now)
-  const member = getEntry(code, 'one', now)
+dbTest('drafts resume privately and only explicit submissions can close the meeting early', async () => {
+  const code = await createMeeting(input, 'owner', now)
+  assert.equal((await writeSchedule(code, 'stranger', windows, 0, true, now)).state, 'join')
+  for (const token of ['one', 'two']) await joinMeeting(code, token, token, now)
+  await writeSchedule(code, 'one', windows, 0, false, now)
+  const member = await getEntry(code, 'one', now)
   assert.ok(member.state === 'member' && !member.submitted)
   assert.deepEqual(member.draft, windows)
-  assert.throws(() => writeSchedule(code, 'one', later, 0, true, now), /another session/)
-  assert.throws(() => writeSchedule(code, 'one', { '2026-03-30': [] }, 1, true, now), /dates/)
-  assert.throws(() => writeSchedule(code, 'one', { '2026-03-29': [{ start: 1, end: 5 }] }, 1, true, now), /15-minute/)
-  writeSchedule(code, 'one', later, 1, true, now)
-  writeSchedule(code, 'one', windows, 2, true, now)
-  writeSchedule(code, 'one', later, 3, false, now)
-  const final = writeSchedule(code, 'two', windows, 0, true, now)
+  await assert.rejects(() => writeSchedule(code, 'one', later, 0, true, now), /another session/)
+  await assert.rejects(() => writeSchedule(code, 'one', { '2026-03-30': [] }, 1, true, now), /dates/)
+  await assert.rejects(() => writeSchedule(code, 'one', { '2026-03-29': [{ start: 1, end: 5 }] }, 1, true, now), /15-minute/)
+  await writeSchedule(code, 'one', later, 1, true, now)
+  await writeSchedule(code, 'one', windows, 2, true, now)
+  await writeSchedule(code, 'one', later, 3, false, now)
+  const final = toPublicEntry(await writeSchedule(code, 'two', windows, 0, true, now))
   assert.ok(final.state === 'closed')
+  assert.deepEqual(Object.keys(final).sort(), ['meeting', 'result', 'state'])
   assert.equal(final.result.responses, 2)
   assert.deepEqual(final.result.main, { day: '2026-03-29', start: 540, end: 600, attendance: 2 })
-  assert.deepEqual(getEntry(code, undefined, now), final)
-  assert.deepEqual(writeSchedule(code, 'one', {}, 4, true, now), final)
+  assert.deepEqual(toPublicEntry(await getEntry(code, undefined, now)), final)
+  assert.deepEqual(toPublicEntry(await joinMeeting(code, 'visitor', 'Visitor', now)), final)
+  assert.deepEqual(toPublicEntry(await writeSchedule(code, 'one', {}, 4, true, now)), final)
 })
 
-test('deadline freezes just the submitted answers and counts explicitly empty submissions', () => {
+dbTest('deadline freezes just the submitted answers and counts explicitly empty submissions', async () => {
   for (const responses of [0, 1, 2, 3]) {
-    const code = createMeeting({ ...input, capacity: 4 }, 'creator', now)
+    const code = await createMeeting({ ...input, capacity: 4 }, 'creator', now)
     for (let i = 0; i < 4; i++) {
-      joinMeeting(code, String(i), 'Guest', now)
-      writeSchedule(code, String(i), i === 2 ? {} : windows, 0, i < responses, now)
+      await joinMeeting(code, String(i), 'Guest', now)
+      await writeSchedule(code, String(i), i === 2 ? {} : windows, 0, i < responses, now)
     }
-    const final = getEntry(code, undefined, Date.parse('2026-03-28T17:00Z'))
+    const final = toPublicEntry(await getEntry(code, undefined, Date.parse('2026-03-28T17:00Z')))
     assert.ok(final.state === 'closed')
     assert.equal(final.result.responses, responses)
     assert.equal(final.result.main?.attendance ?? 0, responses >= 2 ? 2 : 0)
